@@ -5,7 +5,6 @@
     },
     "app/api/wordware/**.js": {
       "memory": 256,
-      "runtime": "edge"
-    }
+     }
   } 
 }
