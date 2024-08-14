@@ -1,0 +1,16 @@
+{
+  "functions": {
+    "app/api/stripe/*.js": {
+      "memory": 256
+    }
+  },
+  "routes": [
+    {
+      "src": "/api/wordware/.*",
+      "dest": "/api/wordware/route.js"
+    }
+  ],
+  "builds": [
+    { "src": "app/api/wordware/route.js", "use": "@vercel/node" }
+  ]
+}
