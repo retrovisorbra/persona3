@@ -46,7 +46,7 @@ export async function POST(request: Request) {
 *retweets: ${tweet.retweetCount ?? 0}, replies: ${tweet.replyCount ?? 0}, likes: ${tweet.likeCount ?? 0}, quotes: ${tweet.quoteCount ?? 0}, views: ${tweet.viewCount ?? 0}*`
   }
 
-  const tweets = user.tweets as TweetType[]
+  const tweets = user.ttweets as TweetType[]
   console.log(`[${username}] Formatting ${tweets.length} tweets`)
 
   const tweetsMarkdown = tweets.map(formatTweet).join('\n---\n\n')
@@ -66,7 +66,7 @@ export async function POST(request: Request) {
         tweets: `Tweets: ${tweetsMarkdown}`,
         profilePicture: user.profilePicture,
         profileInfo: user.fullProfile,
-        version: '^3.2',
+        version: '^1.0',
       },
     }),
   })
@@ -118,27 +118,29 @@ export async function POST(request: Request) {
             }
 
             const line = buffer.join('').trimEnd()
+            buffer = [] // Reset buffer after processing the line
 
             try {
               const content = JSON.parse(line)
               const value = content.value
 
+              // Log value.state and value.label to verify the correct data
+              console.log(`[${username}] value.state: ${value.state}, value.label: ${value.label} [${full ? 'paid' : 'free'}]`)
+
               if (value.type === 'generation') {
-                if (value.state === 'start') {
-                  if (value.label === 'output') {
-                    finalOutput = true
-                  }
-                  console.log(`[${username}] NEW GENERATION - ${value.label} [${full ? 'paid' : 'free'}]`)
-                } else {
-                  if (value.label === 'output') {
-                    finalOutput = false
-                  }
-                  console.log(`[${username}] END GENERATION - ${value.label} [${full ? 'paid' : 'free'}]`)
+                if (value.state === 'start' && value.label === 'output') {
+                  finalOutput = true
+                  console.log(`[${username}] Set finalOutput to true [${full ? 'paid' : 'free'}]`)
+                } else if (value.state === 'end' && value.label === 'output') {
+                  finalOutput = false
+                  console.log(`[${username}] Set finalOutput to false [${full ? 'paid' : 'free'}]`)
                 }
               } else if (value.type === 'chunk') {
                 if (finalOutput) {
                   controller.enqueue(value.value ?? '')
                   console.log(`[${username}] Enqueued chunk [${full ? 'paid' : 'free'}]: ${value.value}`)
+                } else {
+                  console.log(`[${username}] Ignored chunk as finalOutput is false [${full ? 'paid' : 'free'}]: ${value.value}`)
                 }
               } else if (value.type === 'outputs') {
                 console.log(`[${username}] Wordware output [${full ? 'paid' : 'free'}]:`, value.values.output)
@@ -179,8 +181,6 @@ export async function POST(request: Request) {
             } catch (error) {
               console.error(`[${username}] Error processing line [${full ? 'paid' : 'free'}]:`, error)
             }
-
-            buffer = []
           }
         }
       } catch (error) {
