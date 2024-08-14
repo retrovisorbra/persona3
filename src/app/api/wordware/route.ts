@@ -2,48 +2,35 @@ import { getUser, updateUser } from '@/actions/actions'
 import { TweetType } from '@/actions/types'
 import { TwitterAnalysis } from '@/components/analysis/analysis'
 
-/**
- * Maximum duration for the API route execution (in seconds)
- */
 export const maxDuration = 300
 
-/**
- * POST handler for the Wordware API route
- * @param {Request} request - The incoming request object
- * @returns {Promise<Response>} The response object
- */
 export async function POST(request: Request) {
-  // Extract username from the request body
   const { username, full } = await request.json()
+  console.log(`[${username}] Received request for user: ${username}, full version: ${full}`)
 
-  // Log the request received
-  console.log(`Received request for user: ${username}, full version: ${full}`)
-
-  // Fetch user data and check if Wordware has already been started
   const user = await getUser({ username })
-
   if (!user) {
-    console.error(`User not found: ${username}`)
+    console.error(`[${username}] User not found: ${username}`)
     throw Error(`User not found: ${username}`)
   }
 
-  // Log which version is being checked
-  console.log(`Checking if Wordware has already started for ${full ? 'paid' : 'free'} version`)
+  console.log(`[${username}] Checking if Wordware has already started for ${full ? 'paid' : 'free'} version`)
 
   if (!full) {
     if (user.wordwareCompleted || (user.wordwareStarted && Date.now() - user.createdAt.getTime() < 3 * 60 * 1000)) {
-      console.warn(`Wordware already started or completed for free version for user: ${username}`)
+      console.warn(`[${username}] Wordware already started or completed for free version`)
       return Response.json({ error: 'Wordware already started' })
     }
   }
 
   if (full) {
     if (user.paidWordwareCompleted || (user.paidWordwareStarted && Date.now() - user.createdAt.getTime() < 3 * 60 * 1000)) {
-      console.warn(`Wordware already started or completed for paid version for user: ${username}`)
+      console.warn(`[${username}] Wordware already started or completed for paid version`)
       return Response.json({ error: 'Wordware already started' })
     }
   }
 
+ 
   function formatTweet(tweet: TweetType) {
     // console.log('Formatting', tweet)
     const isRetweet = tweet.isRetweet ? 'RT ' : ''
@@ -61,16 +48,15 @@ export async function POST(request: Request) {
 *retweets: ${tweet.retweetCount ?? 0}, replies: ${tweet.replyCount ?? 0}, likes: ${tweet.likeCount ?? 0}, quotes: ${tweet.quoteCount ?? 0}, views: ${tweet.viewCount ?? 0}*`
   }
 
-  const tweets = user.tweets as TweetType[]
+    const tweets = user.tweets as TweetType[]
+  console.log(`[${username}] Formatting ${tweets.length} tweets`)
 
   const tweetsMarkdown = tweets.map(formatTweet).join('\n---\n\n')
 
   const promptID = full ? process.env.WORDWARE_FULL_PROMPT_ID : process.env.WORDWARE_ROAST_PROMPT_ID
+  console.log(`[${username}] Using prompt ID: ${promptID} for ${full ? 'paid' : 'free'} version`)
 
-  // Log the prompt ID being used
-  console.log(`Using prompt ID: ${promptID} for ${full ? 'paid' : 'free'} version`)
-
-  // Make a request to the Wordware API
+  console.log(`[${username}] Making request to Wordware API`)
   const runResponse = await fetch(`https://app.wordware.ai/api/released-app/${promptID}/run`, {
     method: 'POST',
     headers: {
@@ -87,18 +73,15 @@ export async function POST(request: Request) {
     }),
   })
 
-  // Log the response status from the API
-  console.log(`API responded with status: ${runResponse.status} for ${full ? 'paid' : 'free'} version`)
+  console.log(`[${username}] API responded with status: ${runResponse.status} for ${full ? 'paid' : 'free'} version`)
 
-  // Get the reader from the response body
   const reader = runResponse.body?.getReader()
   if (!reader || !runResponse.ok) {
-    console.error('No reader or API call failed', runResponse)
+    console.error(`[${username}] No reader or API call failed`, runResponse)
     return Response.json({ error: 'No reader' }, { status: 400 })
   }
 
-  // Update user to indicate Wordware has started
-  console.log(`Updating user: ${username} to indicate Wordware has started`)
+  console.log(`[${username}] Updating user to indicate Wordware has started`)
   await updateUser({
     user: {
       ...user,
@@ -107,13 +90,12 @@ export async function POST(request: Request) {
     },
   })
 
-  // Set up decoder and buffer for processing the stream
   const decoder = new TextDecoder()
   let buffer: string[] = []
   let finalOutput = false
   const existingAnalysis = user?.analysis as TwitterAnalysis
 
-  // Create a readable stream to process the response
+  console.log(`[${username}] Starting stream processing`)
   const stream = new ReadableStream({
     async start(controller) {
       try {
@@ -121,15 +103,14 @@ export async function POST(request: Request) {
           const { done, value } = await reader.read()
 
           if (done) {
+            console.log(`[${username}] Stream processing completed`)
             controller.close()
             return
           }
 
           const chunk = decoder.decode(value)
-          // Log the chunk received
-          console.log('Received chunk:', chunk)
+          console.log(`[${username}] Received chunk:`, chunk)
 
-          // Process the chunk character by character
           for (let i = 0, len = chunk.length; i < len; ++i) {
             const isChunkSeparator = chunk[i] === '\n'
 
@@ -140,82 +121,82 @@ export async function POST(request: Request) {
 
             const line = buffer.join('').trimEnd()
 
-            // Parse the JSON content of each line
-            const content = JSON.parse(line)
-            const value = content.value
+            try {
+              const content = JSON.parse(line)
+              const value = content.value
 
-            // Handle different types of messages in the stream
-            if (value.type === 'generation') {
-              if (value.state === 'start') {
-                if (value.label === 'output') {
-                  finalOutput = true
+              if (value.type === 'generation') {
+                if (value.state === 'start') {
+                  if (value.label === 'output') {
+                    finalOutput = true
+                  }
+                  console.log(`[${username}] NEW GENERATION - ${value.label}`)
+                } else {
+                  if (value.label === 'output') {
+                    finalOutput = false
+                  }
+                  console.log(`[${username}] END GENERATION - ${value.label}`)
                 }
-                // Log the start of a new generation
-                console.log('\nNEW GENERATION -', value.label)
-              } else {
-                if (value.label === 'output') {
-                  finalOutput = false
+              } else if (value.type === 'chunk') {
+                if (finalOutput) {
+                  controller.enqueue(value.value ?? '')
+                  console.log(`[${username}] Enqueued chunk: ${value.value}`)
                 }
-                // Log the end of a generation
-                console.log('\nEND GENERATION -', value.label)
-              }
-            } else if (value.type === 'chunk') {
-              if (finalOutput) {
-                controller.enqueue(value.value ?? '')
-              }
-            } else if (value.type === 'outputs') {
-              console.log('✨ Wordware:', value.values.output, '. Now parsing')
-              try {
-                const statusObject = full
-                  ? {
-                      paidWordwareStarted: true,
-                      paidWordwareCompleted: true,
-                    }
-                  : { wordwareStarted: true, wordwareCompleted: true }
-                // Update user with the analysis from Wordware
-                await updateUser({
-                  user: {
-                    ...user,
-                    ...statusObject,
-                    analysis: {
-                      ...existingAnalysis,
-                      ...value.values.output,
+              } else if (value.type === 'outputs') {
+                console.log(`[${username}] Wordware output:`, value.values.output)
+                try {
+                  const statusObject = full
+                    ? {
+                        paidWordwareStarted: true,
+                        paidWordwareCompleted: true,
+                      }
+                    : { wordwareStarted: true, wordwareCompleted: true }
+                  await updateUser({
+                    user: {
+                      ...user,
+                      ...statusObject,
+                      analysis: {
+                        ...existingAnalysis,
+                        ...value.values.output,
+                      },
                     },
-                  },
-                })
-                // Log that analysis is saved to the database
-                console.log('Analysis saved to database')
-              } catch (error) {
-                console.error('Error parsing or saving output:', error)
-
-                const statusObject = full
-                  ? {
-                      paidWordwareStarted: false,
-                      paidWordwareCompleted: false,
-                    }
-                  : { wordwareStarted: false, wordwareCompleted: false }
-                await updateUser({
-                  user: {
-                    ...user,
-                    ...statusObject,
-                  },
-                })
+                  })
+                  console.log(`[${username}] Analysis saved to database`)
+                } catch (error) {
+                  console.error(`[${username}] Error parsing or saving output:`, error)
+                  const statusObject = full
+                    ? {
+                        paidWordwareStarted: false,
+                        paidWordwareCompleted: false,
+                      }
+                    : { wordwareStarted: false, wordwareCompleted: false }
+                  await updateUser({
+                    user: {
+                      ...user,
+                      ...statusObject,
+                    },
+                  })
+                }
               }
+            } catch (error) {
+              console.error(`[${username}] Error processing line:`, error)
             }
 
-            // Reset buffer for the next line
             buffer = []
           }
         }
+      } catch (error) {
+        console.error(`[${username}] Error in stream processing:`, error)
       } finally {
-        // Ensure the reader is released when done
+        console.log(`[${username}] Stream processing finished, releasing reader lock`)
         reader.releaseLock()
       }
     },
   })
 
-  // Return the stream as the response
+  console.log(`[${username}] Returning stream response`)
   return new Response(stream, {
     headers: { 'Content-Type': 'text/plain' },
   })
 }
+
