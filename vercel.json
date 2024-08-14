@@ -1,6 +1,6 @@
 {
   "functions": {
-    "app/api/wordware/**": {
+    "app/api/wordware/**.ts": {
       "runtime": "edge"
     }
   }
