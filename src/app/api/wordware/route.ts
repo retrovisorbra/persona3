@@ -51,8 +51,14 @@ export async function POST(request: Request) {
 
   const tweetsMarkdown = tweets.map(formatTweet).join('\n---\n\n')
 
+  // Define specific versions for each prompt ID
+  const fullVersion = process.env.WORDWARE_FULL_VERSION || '^3.2'; // Default or from env
+  const roastVersion = process.env.WORDWARE_ROAST_VERSION || '^1.3'; // Default or from env
+
   const promptID = full ? process.env.WORDWARE_FULL_PROMPT_ID : process.env.WORDWARE_ROAST_PROMPT_ID
-  console.log(`[${username}] Using prompt ID: ${promptID} for ${full ? 'paid' : 'free'} version`)
+  const version = full ? fullVersion : roastVersion
+
+  console.log(`[${username}] Using prompt ID: ${promptID} with version: ${version} for ${full ? 'paid' : 'free'} version`)
 
   console.log(`[${username}] Making request to Wordware API`)
   const runResponse = await fetch(`https://app.wordware.ai/api/released-app/${promptID}/run`, {
@@ -66,7 +72,7 @@ export async function POST(request: Request) {
         tweets: `Tweets: ${tweetsMarkdown}`,
         profilePicture: user.profilePicture,
         profileInfo: user.fullProfile,
-        version: '^1.0',
+        version: version, // Use the specific version
       },
     }),
   })
