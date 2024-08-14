@@ -16,21 +16,30 @@ export async function POST(request: Request) {
   // Extract username from the request body
   const { username, full } = await request.json()
 
+  // Log the request received
+  console.log(`Received request for user: ${username}, full version: ${full}`)
+
   // Fetch user data and check if Wordware has already been started
   const user = await getUser({ username })
 
   if (!user) {
+    console.error(`User not found: ${username}`)
     throw Error(`User not found: ${username}`)
   }
 
+  // Log which version is being checked
+  console.log(`Checking if Wordware has already started for ${full ? 'paid' : 'free'} version`)
+
   if (!full) {
     if (user.wordwareCompleted || (user.wordwareStarted && Date.now() - user.createdAt.getTime() < 3 * 60 * 1000)) {
+      console.warn(`Wordware already started or completed for free version for user: ${username}`)
       return Response.json({ error: 'Wordware already started' })
     }
   }
 
   if (full) {
     if (user.paidWordwareCompleted || (user.paidWordwareStarted && Date.now() - user.createdAt.getTime() < 3 * 60 * 1000)) {
+      console.warn(`Wordware already started or completed for paid version for user: ${username}`)
       return Response.json({ error: 'Wordware already started' })
     }
   }
@@ -58,6 +67,9 @@ export async function POST(request: Request) {
 
   const promptID = full ? process.env.WORDWARE_FULL_PROMPT_ID : process.env.WORDWARE_ROAST_PROMPT_ID
 
+  // Log the prompt ID being used
+  console.log(`Using prompt ID: ${promptID} for ${full ? 'paid' : 'free'} version`)
+
   // Make a request to the Wordware API
   const runResponse = await fetch(`https://app.wordware.ai/api/released-app/${promptID}/run`, {
     method: 'POST',
@@ -75,16 +87,18 @@ export async function POST(request: Request) {
     }),
   })
 
-  // console.log('🟣 | file: route.ts:40 | POST | runResponse:', runResponse)
+  // Log the response status from the API
+  console.log(`API responded with status: ${runResponse.status} for ${full ? 'paid' : 'free'} version`)
+
   // Get the reader from the response body
   const reader = runResponse.body?.getReader()
   if (!reader || !runResponse.ok) {
-    // console.error('No reader')
-    console.log('🟣 | ERROR | file: route.ts:40 | POST | runResponse:', runResponse)
+    console.error('No reader or API call failed', runResponse)
     return Response.json({ error: 'No reader' }, { status: 400 })
   }
 
   // Update user to indicate Wordware has started
+  console.log(`Updating user: ${username} to indicate Wordware has started`)
   await updateUser({
     user: {
       ...user,
@@ -112,7 +126,8 @@ export async function POST(request: Request) {
           }
 
           const chunk = decoder.decode(value)
-          // console.log('🟣 | file: route.ts:80 | start | chunk:', chunk)
+          // Log the chunk received
+          console.log('Received chunk:', chunk)
 
           // Process the chunk character by character
           for (let i = 0, len = chunk.length; i < len; ++i) {
@@ -135,12 +150,14 @@ export async function POST(request: Request) {
                 if (value.label === 'output') {
                   finalOutput = true
                 }
-                // console.log('\nNEW GENERATION -', value.label)
+                // Log the start of a new generation
+                console.log('\nNEW GENERATION -', value.label)
               } else {
                 if (value.label === 'output') {
                   finalOutput = false
                 }
-                // console.log('\nEND GENERATION -', value.label)
+                // Log the end of a generation
+                console.log('\nEND GENERATION -', value.label)
               }
             } else if (value.type === 'chunk') {
               if (finalOutput) {
@@ -166,7 +183,8 @@ export async function POST(request: Request) {
                     },
                   },
                 })
-                // console.log('Analysis saved to database')
+                // Log that analysis is saved to the database
+                console.log('Analysis saved to database')
               } catch (error) {
                 console.error('Error parsing or saving output:', error)
 
