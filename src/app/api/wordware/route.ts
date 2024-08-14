@@ -46,7 +46,7 @@ export async function POST(request: Request) {
 *retweets: ${tweet.retweetCount ?? 0}, replies: ${tweet.replyCount ?? 0}, likes: ${tweet.likeCount ?? 0}, quotes: ${tweet.quoteCount ?? 0}, views: ${tweet.viewCount ?? 0}*`
   }
 
-  const tweets = user.ttweets as TweetType[]
+  const tweets = user.tweets as TweetType[]
   console.log(`[${username}] Formatting ${tweets.length} tweets`)
 
   const tweetsMarkdown = tweets.map(formatTweet).join('\n---\n\n')
