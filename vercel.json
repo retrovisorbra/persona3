@@ -2,7 +2,7 @@
   "functions": {
     "app/api/stripe/*.js": {
       "memory": 256
-    }
+    } 
   },
   "routes": [
     {
