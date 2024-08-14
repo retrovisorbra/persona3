@@ -30,9 +30,7 @@ export async function POST(request: Request) {
     }
   }
 
- 
   function formatTweet(tweet: TweetType) {
-    // console.log('Formatting', tweet)
     const isRetweet = tweet.isRetweet ? 'RT ' : ''
     const author = tweet.author?.userName ?? username
     const createdAt = tweet.createdAt
@@ -48,7 +46,7 @@ export async function POST(request: Request) {
 *retweets: ${tweet.retweetCount ?? 0}, replies: ${tweet.replyCount ?? 0}, likes: ${tweet.likeCount ?? 0}, quotes: ${tweet.quoteCount ?? 0}, views: ${tweet.viewCount ?? 0}*`
   }
 
-    const tweets = user.tweets as TweetType[]
+  const tweets = user.tweets as TweetType[]
   console.log(`[${username}] Formatting ${tweets.length} tweets`)
 
   const tweetsMarkdown = tweets.map(formatTweet).join('\n---\n\n')
@@ -109,7 +107,7 @@ export async function POST(request: Request) {
           }
 
           const chunk = decoder.decode(value)
-          console.log(`[${username}] Received chunk:`, chunk)
+          console.log(`[${username}] Received chunk [${full ? 'paid' : 'free'}]:`, chunk)
 
           for (let i = 0, len = chunk.length; i < len; ++i) {
             const isChunkSeparator = chunk[i] === '\n'
@@ -130,20 +128,20 @@ export async function POST(request: Request) {
                   if (value.label === 'output') {
                     finalOutput = true
                   }
-                  console.log(`[${username}] NEW GENERATION - ${value.label}`)
+                  console.log(`[${username}] NEW GENERATION - ${value.label} [${full ? 'paid' : 'free'}]`)
                 } else {
                   if (value.label === 'output') {
                     finalOutput = false
                   }
-                  console.log(`[${username}] END GENERATION - ${value.label}`)
+                  console.log(`[${username}] END GENERATION - ${value.label} [${full ? 'paid' : 'free'}]`)
                 }
               } else if (value.type === 'chunk') {
                 if (finalOutput) {
                   controller.enqueue(value.value ?? '')
-                  console.log(`[${username}] Enqueued chunk: ${value.value}`)
+                  console.log(`[${username}] Enqueued chunk [${full ? 'paid' : 'free'}]: ${value.value}`)
                 }
               } else if (value.type === 'outputs') {
-                console.log(`[${username}] Wordware output:`, value.values.output)
+                console.log(`[${username}] Wordware output [${full ? 'paid' : 'free'}]:`, value.values.output)
                 try {
                   const statusObject = full
                     ? {
@@ -161,9 +159,9 @@ export async function POST(request: Request) {
                       },
                     },
                   })
-                  console.log(`[${username}] Analysis saved to database`)
+                  console.log(`[${username}] Analysis saved to database [${full ? 'paid' : 'free'}]`)
                 } catch (error) {
-                  console.error(`[${username}] Error parsing or saving output:`, error)
+                  console.error(`[${username}] Error parsing or saving output [${full ? 'paid' : 'free'}]:`, error)
                   const statusObject = full
                     ? {
                         paidWordwareStarted: false,
@@ -179,24 +177,23 @@ export async function POST(request: Request) {
                 }
               }
             } catch (error) {
-              console.error(`[${username}] Error processing line:`, error)
+              console.error(`[${username}] Error processing line [${full ? 'paid' : 'free'}]:`, error)
             }
 
             buffer = []
           }
         }
       } catch (error) {
-        console.error(`[${username}] Error in stream processing:`, error)
+        console.error(`[${username}] Error in stream processing [${full ? 'paid' : 'free'}]:`, error)
       } finally {
-        console.log(`[${username}] Stream processing finished, releasing reader lock`)
+        console.log(`[${username}] Stream processing finished, releasing reader lock [${full ? 'paid' : 'free'}]`)
         reader.releaseLock()
       }
     },
   })
 
-  console.log(`[${username}] Returning stream response`)
+  console.log(`[${username}] Returning stream response [${full ? 'paid' : 'free'}]`)
   return new Response(stream, {
     headers: { 'Content-Type': 'text/plain' },
   })
 }
-
