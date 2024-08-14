@@ -1,0 +1,12 @@
+{
+  "functions": {
+    "app/api/stripe/**.js": {
+      "memory": 256
+    },
+    "app/api/wordware/**.js": {
+      "memory": 256,
+            "runtime": "edge"
+
+    }
+  }
+}
