@@ -52,6 +52,15 @@ export async function POST(request: Request) {
 
   console.log(`[${username}] Sending request to Wordware API`)
 
+  // Update user to indicate Wordware has started
+  await updateUser({
+    user: {
+      ...user,
+      wordwareStarted: true,
+      wordwareStartedTime: new Date(),
+    },
+  })
+
   const stream = new TransformStream()
   const writer = stream.writable.getWriter()
   const encoder = new TextEncoder()
@@ -113,6 +122,7 @@ export async function POST(request: Request) {
     console.log(`[${username}] Received response from Wordware API`)
 
     let buffer = ''
+    let finalOutput = false
     response.data.on('data', (chunk: Buffer) => {
       buffer += chunk.toString()
       const lines = buffer.split('\n')
@@ -121,7 +131,13 @@ export async function POST(request: Request) {
       for (const line of lines) {
         try {
           const parsed = JSON.parse(line)
-          if (parsed.type === 'chunk') {
+          if (parsed.type === 'generation') {
+            if (parsed.value.state === 'start' && parsed.value.label === 'output') {
+              finalOutput = true
+            } else if (parsed.value.state === 'end' && parsed.value.label === 'output') {
+              finalOutput = false
+            }
+          } else if (parsed.type === 'chunk' && finalOutput) {
             writer.write(encoder.encode(parsed.value.value))
           } else if (parsed.type === 'outputs') {
             saveAnalysisAndUpdateUser(parsed.values.output)
