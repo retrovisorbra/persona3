@@ -55,9 +55,8 @@ export async function POST(request: Request) {
 
   console.log(`[${username}] Sending request to Wordware API`)
 
-
   // Update user to indicate Wordware has started
-    await updateUser({
+  await updateUser({
     user: {
       ...user,
       wordwareStarted: true,
@@ -73,7 +72,7 @@ export async function POST(request: Request) {
   let generationEventCount = 0
   const FORCE_FINAL_OUTPUT_AFTER = 50
   let accumulatedOutput = ''
-  let finalAnalysis: any = null
+  let finalAnalysis: TwitterAnalysis | null = null
 
   const stream = new TransformStream()
   const writer = stream.writable.getWriter()
@@ -193,5 +192,3 @@ export async function POST(request: Request) {
     return new Response(JSON.stringify({ error: 'Internal Server Error' }), { status: 500 })
   }
 }
-
-
