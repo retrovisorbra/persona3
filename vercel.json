@@ -7,10 +7,10 @@
   "routes": [
     {
       "src": "/api/wordware/.*",
-      "dest": "/api/wordware/route.js"
+      "dest": "/api/wordware/route.ts"
     }
   ],
   "builds": [
-    { "src": "app/api/wordware/route.js", "use": "@vercel/node" }
+    { "src": "app/api/wordware/route.ts", "use": "@vercel/node" }
   ]
 }
