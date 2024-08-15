@@ -1,40 +1,46 @@
 import { getUser, updateUser } from '@/actions/actions'
 import { TweetType } from '@/actions/types'
 import { TwitterAnalysis } from '@/components/analysis/analysis'
-import axios from 'axios'
 
+/**
+ * Maximum duration for the API route execution (in seconds)
+ */
 export const maxDuration = 300
 
+/**
+ * POST handler for the Wordware API route
+ * @param {Request} request - The incoming request object
+ * @returns {Promise<Response>} The response object
+ */
 export async function POST(request: Request) {
+  // Extract username from the request body
   const { username, full } = await request.json()
-  console.log(`[${username}] Processing request for username: ${username}, full: ${full}`)
 
+  // Fetch user data and check if Wordware has already been started
   const user = await getUser({ username })
 
   if (!user) {
-    console.log(`[${username}] User not found: ${username}`)
     throw Error(`User not found: ${username}`)
   }
 
   if (!full) {
     if (user.wordwareCompleted || (user.wordwareStarted && Date.now() - user.createdAt.getTime() < 3 * 60 * 1000)) {
-      console.log(`[${username}] Wordware already started or completed for ${username}`)
-      return new Response(JSON.stringify({ error: 'Wordware already started' }), { status: 400 })
+      return Response.json({ error: 'Wordware already started' })
     }
   }
 
   if (full) {
     if (user.paidWordwareCompleted || (user.paidWordwareStarted && Date.now() - user.createdAt.getTime() < 3 * 60 * 1000)) {
-      console.log(`[${username}] Paid Wordware already started or completed for ${username}`)
-      return new Response(JSON.stringify({ error: 'Wordware already started' }), { status: 400 })
+      return Response.json({ error: 'Wordware already started' })
     }
   }
 
   function formatTweet(tweet: TweetType) {
+    // console.log('Formatting', tweet)
     const isRetweet = tweet.isRetweet ? 'RT ' : ''
     const author = tweet.author?.userName ?? username
     const createdAt = tweet.createdAt
-    const text = tweet.text ?? ''
+    const text = tweet.text ?? '' // Ensure text is not undefined
     const formattedText = text
       .split('\n')
       .map((line) => `${line}`)
@@ -47,13 +53,36 @@ export async function POST(request: Request) {
   }
 
   const tweets = user.tweets as TweetType[]
+
   const tweetsMarkdown = tweets.map(formatTweet).join('\n---\n\n')
-  console.log(`[${username}] Prepared ${tweets.length} tweets for analysis`)
 
   const promptID = full ? process.env.WORDWARE_FULL_PROMPT_ID : process.env.WORDWARE_ROAST_PROMPT_ID
-  console.log(`[${username}] Using promptID: ${promptID}`)
 
-  console.log(`[${username}] Sending request to Wordware API`)
+  // Make a request to the Wordware API
+  const runResponse = await fetch(`https://app.wordware.ai/api/released-app/${promptID}/run`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${process.env.WORDWARE_API_KEY}`,
+    },
+    body: JSON.stringify({
+      inputs: {
+        tweets: `Tweets: ${tweetsMarkdown}`,
+        profilePicture: user.profilePicture,
+        profileInfo: user.fullProfile,
+        version: '^1.0',
+      },
+    }),
+  })
+
+  // console.log('🟣 | file: route.ts:40 | POST | runResponse:', runResponse)
+  // Get the reader from the response body
+  const reader = runResponse.body?.getReader()
+  if (!reader || !runResponse.ok) {
+    // console.error('No reader')
+    console.log('🟣 | ERROR | file: route.ts:40 | POST | runResponse:', runResponse)
+    return Response.json({ error: 'No reader' }, { status: 400 })
+  }
 
   // Update user to indicate Wordware has started
   await updateUser({
@@ -64,135 +93,111 @@ export async function POST(request: Request) {
     },
   })
 
+  // Set up decoder and buffer for processing the stream
   const decoder = new TextDecoder()
-  let buffer = ''
+  let buffer: string[] = []
   let finalOutput = false
-  let chunkCount = 0
-  let lastChunkTime = Date.now()
-  let generationEventCount = 0
-  const FORCE_FINAL_OUTPUT_AFTER = 50
-  let accumulatedOutput = ''
-  let finalAnalysis: TwitterAnalysis | null = null
+  const existingAnalysis = user?.analysis as TwitterAnalysis
 
-  const stream = new TransformStream()
-  const writer = stream.writable.getWriter()
+  // Create a readable stream to process the response
+  const stream = new ReadableStream({
+    async start(controller) {
+      try {
+        while (true) {
+          const { done, value } = await reader.read()
 
-  try {
-    const response = await axios.post(
-      `https://app.wordware.ai/api/released-app/${promptID}/run`,
-      {
-        inputs: {
-          tweets: `Tweets: ${tweetsMarkdown}`,
-          profilePicture: user.profilePicture,
-          profileInfo: user.fullProfile,
-          version: '^1.0',
-        },
-      },
-      {
-        responseType: 'stream',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${process.env.WORDWARE_API_KEY}`,
-        },
-      }
-    )
-
-    response.data.on('data', (chunk: Buffer) => {
-      buffer += decoder.decode(chunk, { stream: true })
-      chunkCount++
-      const now = Date.now()
-      console.log(`[${username}] Chunk #${chunkCount} received at ${new Date(now).toISOString()}, ${now - lastChunkTime}ms since last chunk`)
-      lastChunkTime = now
-
-      if (chunkCount <= 5) {
-        console.log(`[${username}] Full chunk content: ${buffer}`)
-      }
-
-      const lines = buffer.split('\n')
-      buffer = lines.pop() || ''
-
-      lines.forEach(async (line) => {
-        if (line.trim() === '') return
-
-        try {
-          const content = JSON.parse(line)
-          const value = content.value
-
-          if (value.type === 'generation') {
-            console.log(`[${username}] Generation event: ${value.state} - ${value.label}`)
-            generationEventCount++
-            if (value.state === 'start' && value.label === 'output') {
-              finalOutput = true
-              console.log(`[${username}] finalOutput set to true`)
-            } else if (value.state === 'end' && value.label === 'output') {
-              finalOutput = false
-              console.log(`[${username}] finalOutput set to false`)
-            }
-          } else if (value.type === 'chunk') {
-            if (finalOutput) {
-              accumulatedOutput += value.value ?? ''
-              await writer.write(new TextEncoder().encode(value.value ?? ''))
-              console.log(`[${username}] Enqueued chunk: ${(value.value ?? '').slice(0, 50)}...`)
-            }
-          } else if (value.type === 'outputs') {
-            console.log(`[${username}] Received final output from Wordware. Storing for end-of-stream processing.`)
-            finalAnalysis = value.values.output
+          if (done) {
+            controller.close()
+            return
           }
 
-          if (!finalOutput && chunkCount >= FORCE_FINAL_OUTPUT_AFTER) {
-            console.log(`[${username}] Forcing finalOutput to true after ${FORCE_FINAL_OUTPUT_AFTER} chunks`)
-            finalOutput = true
+          const chunk = decoder.decode(value)
+          // console.log('🟣 | file: route.ts:80 | start | chunk:', chunk)
+
+          // Process the chunk character by character
+          for (let i = 0, len = chunk.length; i < len; ++i) {
+            const isChunkSeparator = chunk[i] === '\n'
+
+            if (!isChunkSeparator) {
+              buffer.push(chunk[i])
+              continue
+            }
+
+            const line = buffer.join('').trimEnd()
+
+            // Parse the JSON content of each line
+            const content = JSON.parse(line)
+            const value = content.value
+
+            // Handle different types of messages in the stream
+            if (value.type === 'generation') {
+              if (value.state === 'start') {
+                if (value.label === 'output') {
+                  finalOutput = true
+                }
+                // console.log('\nNEW GENERATION -', value.label)
+              } else {
+                if (value.label === 'output') {
+                  finalOutput = false
+                }
+                // console.log('\nEND GENERATION -', value.label)
+              }
+            } else if (value.type === 'chunk') {
+              if (finalOutput) {
+                controller.enqueue(value.value ?? '')
+              }
+            } else if (value.type === 'outputs') {
+              console.log('✨ Wordware:', value.values.output, '. Now parsing')
+              try {
+                const statusObject = full
+                  ? {
+                      paidWordwareStarted: true,
+                      paidWordwareCompleted: true,
+                    }
+                  : { wordwareStarted: true, wordwareCompleted: true }
+                // Update user with the analysis from Wordware
+                await updateUser({
+                  user: {
+                    ...user,
+                    ...statusObject,
+                    analysis: {
+                      ...existingAnalysis,
+                      ...value.values.output,
+                    },
+                  },
+                })
+                // console.log('Analysis saved to database')
+              } catch (error) {
+                console.error('Error parsing or saving output:', error)
+
+                const statusObject = full
+                  ? {
+                      paidWordwareStarted: false,
+                      paidWordwareCompleted: false,
+                    }
+                  : { wordwareStarted: false, wordwareCompleted: false }
+                await updateUser({
+                  user: {
+                    ...user,
+                    ...statusObject,
+                  },
+                })
+              }
+            }
+
+            // Reset buffer for the next line
+            buffer = []
           }
-        } catch (error) {
-          console.error(`[${username}] Error processing line:`, error, 'Line content:', line)
         }
-      })
-    })
+      } finally {
+        // Ensure the reader is released when done
+        reader.releaseLock()
+      }
+    },
+  })
 
-   response.data.on('end', async () => {
-  console.log(`[${username}] Stream ended`)
-  console.log(`[${username}] Stream processing finished`)
-  console.log(`[${username}] Total chunks processed: ${chunkCount}`)
-  console.log(`[${username}] Total generation events: ${generationEventCount}`)
-  console.log(`[${username}] Accumulated output length: ${accumulatedOutput.length}`)
-  console.log(`[${username}] Final analysis received: ${finalAnalysis ? 'Yes' : 'No'}`)
-  
-  // Save the accumulated output and final analysis to the database
-  if (finalAnalysis) {
-    const statusObject = full
-      ? { paidWordwareStarted: true, paidWordwareCompleted: true }
-      : { wordwareStarted: true, wordwareCompleted: true }
-    
-    console.log(`[${username}] Attempting to save final analysis and full output to database`)
-    try {
-      await updateUser({
-        user: {
-          ...user,
-          ...statusObject,
-          analysis: {
-            ...user.analysis,
-            ...finalAnalysis,
-            fullOutput: accumulatedOutput,
-          },
-        },
-      })
-      console.log(`[${username}] Final analysis and full output successfully saved to database.`)
-    } catch (error) {
-      console.error(`[${username}] Error saving final analysis:`, error)
-    }
-  } else {
-    console.warn(`[${username}] Stream ended without receiving final analysis. Unable to save to database.`)
-  }
-  
-  console.log(`[${username}] Closing writer`)
-  await writer.close()
-  console.log(`[${username}] Writer closed`)
-})
-    return new Response(stream.readable, {
-      headers: { 'Content-Type': 'text/plain' },
-    })
-  } catch (error) {
-    console.error(`[${username}] Error in Wordware API call:`, error)
-    return new Response(JSON.stringify({ error: 'Internal Server Error' }), { status: 500 })
-  }
+  // Return the stream as the response
+  return new Response(stream, {
+    headers: { 'Content-Type': 'text/plain' },
+  })
 }
