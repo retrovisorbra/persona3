@@ -149,41 +149,45 @@ export async function POST(request: Request) {
       })
     })
 
-    response.data.on('end', async () => {
-      console.log(`[${username}] Stream ended`)
-      console.log(`[${username}] Stream processing finished`)
-      console.log(`[${username}] Total chunks processed: ${chunkCount}`)
-      console.log(`[${username}] Total generation events: ${generationEventCount}`)
-      
-      // Save the accumulated output and final analysis to the database
-      if (finalAnalysis) {
-        const statusObject = full
-          ? { paidWordwareStarted: true, paidWordwareCompleted: true }
-          : { wordwareStarted: true, wordwareCompleted: true }
-        
-        try {
-          await updateUser({
-            user: {
-              ...user,
-              ...statusObject,
-              analysis: {
-                ...user.analysis,
-                ...finalAnalysis,
-                fullOutput: accumulatedOutput,
-              },
-            },
-          })
-          console.log(`[${username}] Final analysis and full output saved to database.`)
-        } catch (error) {
-          console.error(`[${username}] Error saving final analysis:`, error)
-        }
-      } else {
-        console.warn(`[${username}] Stream ended without receiving final analysis.`)
-      }
-      
-      await writer.close()
-    })
-
+   response.data.on('end', async () => {
+  console.log(`[${username}] Stream ended`)
+  console.log(`[${username}] Stream processing finished`)
+  console.log(`[${username}] Total chunks processed: ${chunkCount}`)
+  console.log(`[${username}] Total generation events: ${generationEventCount}`)
+  console.log(`[${username}] Accumulated output length: ${accumulatedOutput.length}`)
+  console.log(`[${username}] Final analysis received: ${finalAnalysis ? 'Yes' : 'No'}`)
+  
+  // Save the accumulated output and final analysis to the database
+  if (finalAnalysis) {
+    const statusObject = full
+      ? { paidWordwareStarted: true, paidWordwareCompleted: true }
+      : { wordwareStarted: true, wordwareCompleted: true }
+    
+    console.log(`[${username}] Attempting to save final analysis and full output to database`)
+    try {
+      await updateUser({
+        user: {
+          ...user,
+          ...statusObject,
+          analysis: {
+            ...user.analysis,
+            ...finalAnalysis,
+            fullOutput: accumulatedOutput,
+          },
+        },
+      })
+      console.log(`[${username}] Final analysis and full output successfully saved to database.`)
+    } catch (error) {
+      console.error(`[${username}] Error saving final analysis:`, error)
+    }
+  } else {
+    console.warn(`[${username}] Stream ended without receiving final analysis. Unable to save to database.`)
+  }
+  
+  console.log(`[${username}] Closing writer`)
+  await writer.close()
+  console.log(`[${username}] Writer closed`)
+})
     return new Response(stream.readable, {
       headers: { 'Content-Type': 'text/plain' },
     })
