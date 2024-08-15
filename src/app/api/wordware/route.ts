@@ -2,7 +2,6 @@ import { getUser, updateUser } from '@/actions/actions'
 import { TweetType } from '@/actions/types'
 import { TwitterAnalysis } from '@/components/analysis/analysis'
 import axios from 'axios'
-import { NextResponse } from 'next/server'
 
 export const maxDuration = 300
 
@@ -56,11 +55,7 @@ export async function POST(request: Request) {
 
   console.log(`[${username}] Sending request to Wordware API`)
 
-  const stream = new TransformStream()
-  const writer = stream.writable.getWriter()
-  const encoder = new TextEncoder()
-
-  console.log(`[${username}] Updating user to indicate Wordware has started`)
+  // Update user to indicate Wordware has started
   await updateUser({
     user: {
       ...user,
@@ -76,20 +71,10 @@ export async function POST(request: Request) {
   let chunkCount = 0
   let lastChunkTime = Date.now()
   let generationEventCount = 0
-  const FORCE_FINAL_OUTPUT_AFTER = 50 // Force finalOutput after this many chunks if not set
+  const FORCE_FINAL_OUTPUT_AFTER = 50
 
-  function logMemoryUsage() {
-    const used = process.memoryUsage()
-    console.log(`[${username}] Memory usage:`)
-    for (const key in used) {
-      console.log(`${key}: ${Math.round(used[key as keyof NodeJS.MemoryUsage] / 1024 / 1024 * 100) / 100} MB`)
-    }
-  }
-
-  // Implement timeout mechanism
-  const timeoutDuration = 5 * 60 * 1000 // 5 minutes
-  const abortController = new AbortController()
-  const timeoutId = setTimeout(() => abortController.abort(), timeoutDuration)
+  const stream = new TransformStream()
+  const writer = stream.writable.getWriter()
 
   async function saveAnalysisAndUpdateUser(user: any, value: any, full: boolean) {
     console.log(`[${username}] Attempting to save analysis. Value received:`, JSON.stringify(value));
@@ -143,41 +128,31 @@ export async function POST(request: Request) {
         },
       },
       {
+        responseType: 'stream',
         headers: {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${process.env.WORDWARE_API_KEY}`,
         },
-        responseType: 'stream',
       }
     )
 
-    console.log(`[${username}] Received response from Wordware API`)
-
     response.data.on('data', (chunk: Buffer) => {
-      if (abortController.signal.aborted) {
-        throw new Error('Stream processing timed out')
-      }
-
-      const decodedChunk = decoder.decode(chunk, { stream: true })
-      buffer += decodedChunk
+      buffer += decoder.decode(chunk, { stream: true })
       chunkCount++
       const now = Date.now()
       console.log(`[${username}] Chunk #${chunkCount} received at ${new Date(now).toISOString()}, ${now - lastChunkTime}ms since last chunk`)
       lastChunkTime = now
 
       if (chunkCount <= 5) {
-        console.log(`[${username}] Full chunk content: ${decodedChunk}`)
-      }
-
-      if (chunkCount % 10 === 0) {
-        console.log(`[${username}] Buffer size: ${buffer.length} characters`)
-        logMemoryUsage()
+        console.log(`[${username}] Full chunk content: ${buffer}`)
       }
 
       const lines = buffer.split('\n')
       buffer = lines.pop() || ''
 
-      for (const line of lines) {
+      lines.forEach(async (line) => {
+        if (line.trim() === '') return
+
         try {
           const content = JSON.parse(line)
           const value = content.value
@@ -185,20 +160,16 @@ export async function POST(request: Request) {
           if (value.type === 'generation') {
             console.log(`[${username}] Generation event: ${value.state} - ${value.label}`)
             generationEventCount++
-            if (value.state === 'start') {
-              if (value.label === 'output') {
-                finalOutput = true
-                console.log(`[${username}] finalOutput set to true`)
-              }
-            } else {
-              if (value.label === 'output') {
-                finalOutput = false
-                console.log(`[${username}] finalOutput set to false`)
-              }
+            if (value.state === 'start' && value.label === 'output') {
+              finalOutput = true
+              console.log(`[${username}] finalOutput set to true`)
+            } else if (value.state === 'end' && value.label === 'output') {
+              finalOutput = false
+              console.log(`[${username}] finalOutput set to false`)
             }
           } else if (value.type === 'chunk') {
             if (finalOutput) {
-              writer.write(encoder.encode(value.value ?? ''))
+              await writer.write(new TextEncoder().encode(value.value ?? ''))
               console.log(`[${username}] Enqueued chunk: ${(value.value ?? '').slice(0, 50)}...`)
             }
           } else if (value.type === 'outputs') {
@@ -213,27 +184,22 @@ export async function POST(request: Request) {
         } catch (error) {
           console.error(`[${username}] Error processing line:`, error, 'Line content:', line)
         }
-      }
+      })
     })
 
-    response.data.on('end', () => {
+    response.data.on('end', async () => {
       console.log(`[${username}] Stream ended`)
-      clearTimeout(timeoutId)
       console.log(`[${username}] Stream processing finished`)
       console.log(`[${username}] Total chunks processed: ${chunkCount}`)
       console.log(`[${username}] Total generation events: ${generationEventCount}`)
-      writer.close()
+      await writer.close()
     })
 
-    return new NextResponse(stream.readable, {
+    return new Response(stream.readable, {
       headers: { 'Content-Type': 'text/plain' },
     })
   } catch (error) {
     console.error(`[${username}] Error in Wordware API call:`, error)
-    if (error.name === 'AbortError') {
-      console.error(`[${username}] Stream processing timed out after`, timeoutDuration / 1000, 'seconds')
-    }
-    clearTimeout(timeoutId)
-    return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 })
+    return new Response(JSON.stringify({ error: 'Internal Server Error' }), { status: 500 })
   }
 }
