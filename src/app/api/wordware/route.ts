@@ -2,9 +2,9 @@ import { getUser, updateUser } from '@/actions/actions';
 import { TweetType } from '@/actions/types';
 import { TwitterAnalysis } from '@/components/analysis/analysis';
 
-export const config = {
-  runtime: 'edge',
-};
+export const runtime = "edge";
+
+
 
 export async function POST(request) {
   const { username, full } = await request.json();
