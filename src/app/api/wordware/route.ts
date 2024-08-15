@@ -55,8 +55,9 @@ export async function POST(request: Request) {
 
   console.log(`[${username}] Sending request to Wordware API`)
 
+
   // Update user to indicate Wordware has started
-  await updateUser({
+    await updateUser({
     user: {
       ...user,
       wordwareStarted: true,
@@ -67,54 +68,15 @@ export async function POST(request: Request) {
   const decoder = new TextDecoder()
   let buffer = ''
   let finalOutput = false
-  const existingAnalysis = user?.analysis as TwitterAnalysis
   let chunkCount = 0
   let lastChunkTime = Date.now()
   let generationEventCount = 0
   const FORCE_FINAL_OUTPUT_AFTER = 50
+  let accumulatedOutput = ''
+  let finalAnalysis: any = null
 
   const stream = new TransformStream()
   const writer = stream.writable.getWriter()
-
-  async function saveAnalysisAndUpdateUser(user: any, value: any, full: boolean) {
-    console.log(`[${username}] Attempting to save analysis. Value received:`, JSON.stringify(value));
-    
-    const statusObject = full
-      ? {
-          paidWordwareStarted: true,
-          paidWordwareCompleted: true,
-        }
-      : { wordwareStarted: true, wordwareCompleted: true };
-    
-    try {
-      await updateUser({
-        user: {
-          ...user,
-          ...statusObject,
-          analysis: {
-            ...existingAnalysis,
-            ...value.values.output,
-          },
-        },
-      });
-      console.log(`[${username}] Analysis saved to database.`);
-    } catch (error) {
-      console.error(`[${username}] Error parsing or saving output:`, error);
-      const statusObject = full
-        ? {
-            paidWordwareStarted: false,
-            paidWordwareCompleted: false,
-          }
-        : { wordwareStarted: false, wordwareCompleted: false };
-      await updateUser({
-        user: {
-          ...user,
-          ...statusObject,
-        },
-      });
-      console.log(`[${username}] Updated user status to indicate failure.`);
-    }
-  }
 
   try {
     const response = await axios.post(
@@ -169,12 +131,13 @@ export async function POST(request: Request) {
             }
           } else if (value.type === 'chunk') {
             if (finalOutput) {
+              accumulatedOutput += value.value ?? ''
               await writer.write(new TextEncoder().encode(value.value ?? ''))
               console.log(`[${username}] Enqueued chunk: ${(value.value ?? '').slice(0, 50)}...`)
             }
           } else if (value.type === 'outputs') {
-            console.log(`[${username}] Received final output from Wordware. Now parsing`)
-            await saveAnalysisAndUpdateUser(user, value, full)
+            console.log(`[${username}] Received final output from Wordware. Storing for end-of-stream processing.`)
+            finalAnalysis = value.values.output
           }
 
           if (!finalOutput && chunkCount >= FORCE_FINAL_OUTPUT_AFTER) {
@@ -192,6 +155,33 @@ export async function POST(request: Request) {
       console.log(`[${username}] Stream processing finished`)
       console.log(`[${username}] Total chunks processed: ${chunkCount}`)
       console.log(`[${username}] Total generation events: ${generationEventCount}`)
+      
+      // Save the accumulated output and final analysis to the database
+      if (finalAnalysis) {
+        const statusObject = full
+          ? { paidWordwareStarted: true, paidWordwareCompleted: true }
+          : { wordwareStarted: true, wordwareCompleted: true }
+        
+        try {
+          await updateUser({
+            user: {
+              ...user,
+              ...statusObject,
+              analysis: {
+                ...user.analysis,
+                ...finalAnalysis,
+                fullOutput: accumulatedOutput,
+              },
+            },
+          })
+          console.log(`[${username}] Final analysis and full output saved to database.`)
+        } catch (error) {
+          console.error(`[${username}] Error saving final analysis:`, error)
+        }
+      } else {
+        console.warn(`[${username}] Stream ended without receiving final analysis.`)
+      }
+      
       await writer.close()
     })
 
@@ -203,3 +193,5 @@ export async function POST(request: Request) {
     return new Response(JSON.stringify({ error: 'Internal Server Error' }), { status: 500 })
   }
 }
+
+
