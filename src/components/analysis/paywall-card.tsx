@@ -42,7 +42,7 @@ export const PaywallCard: React.FC = () => {
     },
   })
 
-  const paywallFlag = searchParams.get('stripe') ?? '10'; // Default price in cents ($10.00)
+  const paywallFlag = posthog.getFeatureFlag('paywall2') ?? searchParams.get('stripe')
 
   // console.log('paywall flag', paywallFlag, searchParams.get('stripe'))
 
