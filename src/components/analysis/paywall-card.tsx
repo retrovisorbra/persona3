@@ -55,6 +55,15 @@ export const PaywallCard: React.FC = () => {
   // Logging statements
   console.log('Component Rendered: PaywallCard');
   console.log('Paywall Feature Flag Value:', paywallFlag);
+
+  // Log the full payload being returned, if available
+  const paywallPayload = posthog.getFeatureFlagPayload('paywall2');
+  console.log('Paywall Payload:', paywallPayload);
+
+  // Extract price from payload if it exists
+  const price = paywallPayload?.price || 'Invalid price';
+  console.log('Price Extracted from Payload:', price);
+
   console.log('Search Params:', searchParams.toString());
   console.log('Pathname:', pathname);
   console.log('Router Object:', router);
@@ -97,7 +106,7 @@ export const PaywallCard: React.FC = () => {
             <p className="mb-4">Unlock all insights by purchasing below.</p>
             <PriceButton
               username={pathname}
-              price={paywallFlag as string}
+              price={price}  // Pass the extracted price
             />
             <p className="mt-4 text-sm text-gray-800">
               Full access includes comprehensive persona analysis, including: <strong>Roast</strong>, <strong>Strengths</strong>, <strong>Weaknesses</strong>,{' '}
