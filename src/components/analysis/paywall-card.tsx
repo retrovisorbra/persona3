@@ -31,48 +31,59 @@ export const PriceButton = ({ username, price }: { username: string; price: stri
   </Button>
 )
 
+
 export const PaywallCard: React.FC = () => {
-  const searchParams = useSearchParams()
-  const pathname = usePathname()
-  const router = useRouter()
+  const searchParams = useSearchParams();
+  const pathname = usePathname();
+  const router = useRouter();
   const form = useForm<z.infer<typeof FormSchema>>({
     resolver: zodResolver(FormSchema),
     defaultValues: {
       email: '',
     },
-  })
+  });
 
-  const paywallFlag = posthog.getFeatureFlag('paywall2') ?? searchParams.get('stripe')
-console.log('Paywall Feature Flag Value:', paywallFlag);
+  const paywallFlag = posthog.getFeatureFlag('paywall2') ?? searchParams.get('stripe');
 
-console.log('paywall flag', paywallFlag, searchParams.get('stripe'))
+  console.log('Component Rendered: PaywallCard');
+  console.log('Paywall Feature Flag Value:', paywallFlag);
+  console.log('Search Params:', searchParams.toString());
+  console.log('Pathname:', pathname);
+  console.log('Router Object:', router);
 
-  console.log('NEXT_PUBLIC_POSTHOG_KEY:', process.env.NEXT_PUBLIC_POSTHOG_KEY);
-console.log('NEXT_PUBLIC_POSTHOG_HOST:', process.env.NEXT_PUBLIC_POSTHOG_HOST);
+  useEffect(() => {
+    console.log('PaywallCard Mounted');
 
-  console.log('Current Pathname:', pathname);
-console.log('Search Params:', searchParams.toString());
-console.log('Router Object:', router);
+    return () => {
+      console.log('PaywallCard Unmounted');
+    };
+  }, []);
 
+  useEffect(() => {
+    console.log('Paywall Flag Updated:', paywallFlag);
+  }, [paywallFlag]);
 
   async function onSubmit(values: z.infer<typeof FormSchema>) {
-    // Attempt to create a contact in Loops
-    const { success } = await unlockGeneration({ username: pathname, email: values.email })
+    console.log('Form Submitted:', values);
+    const { success } = await unlockGeneration({ username: pathname, email: values.email });
     if (!success) {
-      toast.error('Something went wrong')
+      toast.error('Something went wrong');
+      console.log('Form submission failed.');
     } else {
-      toast.success('You have been added to the newsletter.')
-      const newUrl = new URL(pathname, window.location.origin)
-      newUrl.searchParams.set('success', 'true')
-      router.replace(newUrl.toString())
-      router.refresh()
+      toast.success('You have been added to the newsletter.');
+      console.log('Form submission successful.');
+      const newUrl = new URL(pathname, window.location.origin);
+      newUrl.searchParams.set('success', 'true');
+      router.replace(newUrl.toString());
+      router.refresh();
     }
   }
 
   if (typeof window !== 'undefined' && searchParams.has('success')) {
-    console.log('Conversion successful')
-    posthog.capture('conversion')
+    console.log('Conversion successful');
+    posthog.capture('conversion');
   }
+
   return (
     <Card className={cn(`relative w-full overflow-hidden rounded-2xl border bg-blue-600 bg-opacity-5 px-4 pb-4`)}>
       <CardHeader className="flex w-full flex-col items-start">
@@ -129,7 +140,6 @@ console.log('Router Object:', router);
                   disabled={form.formState.isSubmitting || form.formState.isSubmitSuccessful}
                   type="submit"
                   className="w-full bg-green-600 hover:bg-green-700">
-                  {/* Dynamic button text based on form state */}
                   {form.formState.isSubmitting ? 'Unlocking...' : form.formState.isSubmitSuccessful ? 'Success. Refresh the page.' : 'Unlock Full Analysis'}
                 </Button>
               </form>
@@ -143,5 +153,5 @@ console.log('Router Object:', router);
         )}
       </CardContent>
     </Card>
-  )
-}
+  );
+};
