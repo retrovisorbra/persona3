@@ -102,7 +102,6 @@ export const PaywallCard: React.FC = () => {
       </CardHeader>
       <CardContent className="flex flex-col text-gray-700">
         {paywallFlag && paywallFlag !== 'control' ? (
-           
           <>
             <p className="mb-4">Unlock all insights by purchasing below.</p>
             <PriceButton
@@ -116,8 +115,6 @@ export const PaywallCard: React.FC = () => {
               <strong>$50 Thing</strong>, <strong>Career</strong>, and <strong>Life Suggestion</strong>.
             </p>
           </>
-           
-          null  // Placeholder to avoid syntax error, will be removed after testing
         ) : (
           <>
             <p className="mb-4">Unlock all insights by leaving your email address below.</p>
@@ -163,4 +160,3 @@ export const PaywallCard: React.FC = () => {
     </Card>
   );
 };
-
