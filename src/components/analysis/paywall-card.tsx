@@ -20,16 +20,24 @@ const FormSchema = z.object({
   email: z.string().email(),
 });
 
-export const PriceButton = ({ username, price }: { username: string; price: string }) => (
-  <Button
-    onClick={() => {
-      createCheckoutSession({ username, priceInt: parseInt(price), type: 'user' });
-    }}
-    className={cn('w-full bg-green-600 hover:bg-green-700', !PERSONALITY_PART1_PAYWALL && 'max-w-md')}
-    type="button">
-    Unlock Full Analysis (${parseInt(price) / 100})
-  </Button>
-);
+export const PriceButton = ({ username, price }: { username: string; price: string }) => {
+  console.log('PriceButton Rendered with price:', price);
+
+  const parsedPrice = parseInt(price);
+  console.log('Parsed Price:', parsedPrice);
+
+  return (
+    <Button
+      onClick={() => {
+        console.log('Button clicked with price:', parsedPrice);
+        createCheckoutSession({ username, priceInt: parsedPrice, type: 'user' });
+      }}
+      className={cn('w-full bg-green-600 hover:bg-green-700', !PERSONALITY_PART1_PAYWALL && 'max-w-md')}
+      type="button">
+      Unlock Full Analysis (${isNaN(parsedPrice) ? 'Invalid price' : parsedPrice / 100})
+    </Button>
+  );
+};
 
 export const PaywallCard: React.FC = () => {
   const searchParams = useSearchParams();
